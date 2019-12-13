@@ -15,7 +15,7 @@ export type FragmentMap = { [fragmentName: string]: FragmentDefinitionNode };
 export interface QueryPlan {
   kind: 'QueryPlan';
   node?: PlanNode;
-}
+};
 
 export type OperationContext = {
   schema: GraphQLSchema;
@@ -41,6 +41,7 @@ export interface FetchNode {
   selectionSet: SelectionSetNode;
   variableUsages?: { [name: string]: VariableDefinitionNode };
   requires?: SelectionSetNode;
+  internalFragments: Set<FragmentDefinitionNode>;
 }
 export interface FlattenNode {
   kind: 'Flatten';

@@ -26,6 +26,10 @@ import {
   TypeNameMetaFieldDef,
   visit,
   VariableDefinitionNode,
+  print,
+  VisitFn,
+  ASTNode,
+  VariableNode,
 } from 'graphql';
 import {
   Field,
@@ -110,7 +114,8 @@ function executionNodeForGroup(
       group.requiredFields && group.requiredFields.length > 0
         ? selectionSetFromFieldSet(group.requiredFields)
         : undefined,
-    variableUsages: context.getVariableUsages(selectionSet),
+    variableUsages: context.getVariableUsages(selectionSet, group.internalFragments),
+    internalFragments: group.internalFragments
   };
 
   const node: PlanNode =
@@ -539,15 +544,67 @@ function completeField(
 
     parentGroup.otherDependentGroups.push(...subGroup.dependentGroups);
 
+    const { definition, selection } = getInternalFragment(subGroup.fields, returnType, context);
+
+    subGroup.internalFragments.forEach(fragment => {
+      parentGroup.internalFragments.add(fragment);
+    });
+    parentGroup.internalFragments.add(definition);
+
     return {
       scope,
       fieldNode: {
         ...fieldNode,
-        selectionSet: selectionSetFromFieldSet(subGroup.fields, returnType),
+        selectionSet: selection,
       },
       fieldDef,
     };
   }
+}
+
+let queryPlanInternalFragmentCount = 0;
+function getInternalFragment(fields: Field<GraphQLCompositeType>[], returnType: GraphQLCompositeType, context: QueryPlanningContext) {
+  const selectionSet = selectionSetFromFieldSet(fields, returnType);
+
+  const key = print(selectionSet);
+  let name: string;
+  let definition: FragmentDefinitionNode;
+  let selection: SelectionSetNode;
+  if (context.internalFragments[key]) {
+    ({ name, definition, selection } = context.internalFragments[key]);
+  }
+  else {
+    name = `__QueryPlanFragment_${queryPlanInternalFragmentCount++}__`;
+    definition = {
+      kind: 'FragmentDefinition',
+      name: {
+        kind: 'Name',
+        value: name,
+      },
+      typeCondition: {
+        kind: 'NamedType',
+        name: {
+          kind: 'Name',
+          value: returnType.name,
+        },
+      },
+      selectionSet,
+    };
+    selection = {
+      kind: 'SelectionSet',
+      selections: [
+        {
+          kind: 'FragmentSpread',
+          name: {
+            kind: 'Name',
+            value: name,
+          },
+        },
+      ],
+    };
+    context.internalFragments[key] = { name, definition, selection };
+  }
+  return { name, definition, selection };
 }
 
 function collectFields(
@@ -646,6 +703,7 @@ class FetchGroup {
   constructor(
     public readonly serviceName: string,
     public readonly fields: FieldSet = [],
+    public readonly internalFragments: Set<FragmentDefinitionNode> = new Set()
   ) {}
 
   requiredFields: FieldSet = [];
@@ -738,6 +796,14 @@ export function buildQueryPlanningContext({
 }
 
 export class QueryPlanningContext {
+  public internalFragments: {
+    [key: string]: {
+      name: string;
+      definition: FragmentDefinitionNode;
+      selection: SelectionSetNode;
+    };
+  } = {};
+
   protected variableDefinitions: {
     [name: string]: VariableDefinitionNode;
   };
@@ -778,16 +844,24 @@ export class QueryPlanningContext {
     return isAbstractType(type) ? this.schema.getPossibleTypes(type) : [type];
   }
 
-  getVariableUsages(selectionSet: SelectionSetNode) {
+  getVariableUsages(selectionSet: SelectionSetNode, fragments: Set<FragmentDefinitionNode>) {
     const usages: {
       [name: string]: VariableDefinitionNode;
     } = Object.create(null);
 
+    const Variable: VisitFn<ASTNode, VariableNode> = (node) => {
+      usages[node.name.value] = this.variableDefinitions[node.name.value];
+    }
+
     visit(selectionSet, {
-      Variable: node => {
-        usages[node.name.value] = this.variableDefinitions[node.name.value];
-      },
+      Variable
     });
+
+    fragments.forEach(fragment => {
+      visit(fragment, {
+        Variable
+      })
+    })
 
     return usages;
   }

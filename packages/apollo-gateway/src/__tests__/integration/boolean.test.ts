@@ -8,6 +8,7 @@ import * as product from '../__fixtures__/schemas/product';
 import * as reviews from '../__fixtures__/schemas/reviews';
 
 import { astSerializer, queryPlanSerializer } from '../../snapshotSerializers';
+import { print } from 'graphql';
 
 expect.addSnapshotSerializer(astSerializer);
 expect.addSnapshotSerializer(queryPlanSerializer);

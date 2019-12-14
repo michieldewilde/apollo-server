@@ -514,19 +514,19 @@ describe('runQuery', () => {
 
     describe('didEncounterErrors', () => {
       const didEncounterErrors = jest.fn();
+      const plugins: ApolloServerPlugin[] = [
+        {
+          requestDidStart() {
+            return { didEncounterErrors };
+          },
+        },
+      ];
+
       it('called when an error occurs', async () => {
         await runQuery({
           schema,
           queryString: '{ testStringWithParseError: }',
-          plugins: [
-            {
-              requestDidStart() {
-                return {
-                  didEncounterErrors,
-                };
-              },
-            },
-          ],
+          plugins,
           request: new MockReq(),
         });
 
@@ -541,15 +541,7 @@ describe('runQuery', () => {
         await runQuery({
           schema,
           queryString: '{ testString }',
-          plugins: [
-            {
-              requestDidStart() {
-                return {
-                  didEncounterErrors,
-                };
-              },
-            },
-          ],
+          plugins,
           request: new MockReq(),
         });
 
